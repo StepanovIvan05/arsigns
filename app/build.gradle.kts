@@ -75,4 +75,9 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    implementation(project(":domain"))
+    implementation(project(":feature-cv"))
+    implementation(project(":feature-tts"))
+    implementation(project(":core-data"))
 }
