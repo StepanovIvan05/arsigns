@@ -14,15 +14,27 @@ class SignRepositoryImpl @Inject constructor(
     private val signDao: SignDao
 ) : ISignRepository {
 
-    private var _cachedSigns: Map<Int, SignEntity> = emptyMap()
+    // thread-safe кэш, работающий на чтение без блокировок
+    @Volatile
+    private var cachedSigns: Map<Int, SignEntity> = emptyMap()
 
     override suspend fun preloadCache() = withContext(Dispatchers.IO) {
-        _cachedSigns = signDao.getAll()
+        cachedSigns = signDao.getAll()
             .map { it.toDomain() }
             .associateBy { it.id }
     }
 
-    override suspend fun getSignById(id: Int): SignEntity? = withContext(Dispatchers.IO) {
-        signDao.getById(id.toString())?.toDomain() ?: _cachedSigns[id]
+    override suspend fun getSignById(id: Int): SignEntity? {
+        // 1. Идеальный путь: берем из RAM за O(1)
+        cachedSigns[id]?.let { return it }
+
+        // 2. Фолбэк: если кэш пуст или знак новый, идем в БД один раз
+        return withContext(Dispatchers.IO) {
+            // Приводим id к String, если этого требует твой Dao
+            signDao.getById(id.toString())?.toDomain()?.also { entity ->
+                // На всякий случай сохраняем в кэш, чтобы не ходить в БД на следующем кадре
+                cachedSigns = cachedSigns + (id to entity)
+            }
+        }
     }
 }
