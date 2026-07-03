@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.feature_tts"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

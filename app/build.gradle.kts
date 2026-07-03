@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.example.artrafficsign"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.artrafficsign"
@@ -54,7 +54,9 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Jetpack Compose (Интерфейс приложения)
     implementation(platform(libs.androidx.compose.bom))
