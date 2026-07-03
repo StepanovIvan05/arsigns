@@ -1,6 +1,13 @@
 package com.example.artrafficsign.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.view.ViewGroup
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -26,19 +33,22 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.artrafficsign.viewmodel.AppViewModel
+import com.example.artrafficsign.viewmodel.CameraViewModel
 import com.example.artrafficsign.viewmodel.SettingsViewModel
+import com.example.domain.model.ActiveSign
 import com.example.domain.model.AppSettings
-import com.example.domain.model.DetectedSign
 import com.example.domain.model.SignEntity
-import com.example.domain.model.YoloModelType
 import kotlinx.coroutines.launch
 
 sealed class AppScreen(val route: String, val label: String, val icon: ImageVector) {
@@ -51,7 +61,11 @@ sealed class AppScreen(val route: String, val label: String, val icon: ImageVect
 }
 
 @Composable
-fun AppNavigation(appViewModel: AppViewModel, settingsViewModel: SettingsViewModel) {
+fun AppNavigation(
+    appViewModel: AppViewModel = hiltViewModel(),
+    settingsViewModel: SettingsViewModel = hiltViewModel(),
+    cameraViewModel: CameraViewModel = hiltViewModel()
+) {
     val navController = rememberNavController()
     val items = listOf(AppScreen.Home, AppScreen.History, AppScreen.Settings)
 
@@ -89,28 +103,24 @@ fun AppNavigation(appViewModel: AppViewModel, settingsViewModel: SettingsViewMod
         ) {
             composable(AppScreen.Home.route) {
                 HomeScreen(
-                    appViewModel = appViewModel,
+                    cameraViewModel = cameraViewModel,
                     onSignSelected = { signId -> navController.navigate(AppScreen.Detail.createRoute(signId)) }
                 )
             }
             composable(AppScreen.History.route) {
                 HistoryScreen(
-                    appViewModel = appViewModel,
+                    cameraViewModel = cameraViewModel,
                     onSignSelected = { signId -> navController.navigate(AppScreen.Detail.createRoute(signId)) }
                 )
             }
             composable(AppScreen.Settings.route) {
-                val settings by settingsViewModel.settings.collectAsState()
-                val isVoiceAvailable by appViewModel.isVoiceAvailable.collectAsState()
-                val isCvAvailable by appViewModel.isCvAvailable.collectAsState()
+                val settings by settingsViewModel.settingsState.collectAsState()
 
                 SettingsScreen(
                     appSettingsState = settings,
-                    isVoiceAvailable = isVoiceAvailable,
-                    isCvAvailable = isCvAvailable,
-                    onToggleVoice = { enabled -> settingsViewModel.toggleTts(enabled) },
-                    onSelectModel = { model -> settingsViewModel.updateSelectedModel(model) },
-                    onThresholdChange = { threshold -> settingsViewModel.updateConfidenceThreshold(threshold) }
+                    onToggleVoice = { enabled -> settingsViewModel.onTtsToggled(enabled) },
+                    onSelectModel = { modelPath -> settingsViewModel.onModelSelected(modelPath) },
+                    onThresholdChange = { threshold -> settingsViewModel.onConfidenceChanged(threshold) }
                 )
             }
             composable(AppScreen.Detail.route) { backStackEntry ->
@@ -126,24 +136,53 @@ fun AppNavigation(appViewModel: AppViewModel, settingsViewModel: SettingsViewMod
 }
 
 @Composable
-fun HomeScreen(appViewModel: AppViewModel, onSignSelected: (Int) -> Unit) {
-    val liveDetectedSigns by appViewModel.liveDetectedSigns.collectAsState()
-    val isCvAvailable by appViewModel.isCvAvailable.collectAsState()
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        // 1. Camera Layer
-        CameraPreview(modifier = Modifier.fillMaxSize())
-
-        // 2. Detection Layer (Bounding Boxes)
-        DetectionOverlay(
-            detectedSigns = liveDetectedSigns,
-            onSignClick = onSignSelected
+fun HomeScreen(cameraViewModel: CameraViewModel, onSignSelected: (Int) -> Unit) {
+    val context = LocalContext.current
+    val uiState by cameraViewModel.uiState.collectAsState()
+    
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         )
+    }
 
-        // 3. UI Overlay for Status
-        if (!isCvAvailable) {
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.TopCenter) {
-                InfoMessage("Модуль CV не подключен. Камера работает в режиме превью.")
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission = isGranted
+    }
+
+    // Автоматический запрос разрешения при входе, если его нет
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission) {
+            launcher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    if (hasCameraPermission) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            CameraPreview(modifier = Modifier.fillMaxSize())
+
+            DetectionOverlay(
+                activeSigns = uiState,
+                onSignClick = { signId -> 
+                    cameraViewModel.onSignClicked(signId)
+                    onSignSelected(signId)
+                }
+            )
+        }
+    } else {
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Для работы приложения нужен доступ к камере. Пожалуйста, предоставьте разрешение.",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
+                    Text("Разрешить камеру")
+                }
             }
         }
     }
@@ -151,15 +190,41 @@ fun HomeScreen(appViewModel: AppViewModel, onSignSelected: (Int) -> Unit) {
 
 @Composable
 fun CameraPreview(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+
     AndroidView(
         factory = { ctx ->
-            PreviewView(ctx).apply {
+            val previewView = PreviewView(ctx).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 scaleType = PreviewView.ScaleType.FILL_CENTER
             }
+
+            cameraProviderFuture.addListener({
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        cameraSelector,
+                        preview
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }, ContextCompat.getMainExecutor(context))
+
+            previewView
         },
         modifier = modifier
     )
@@ -167,12 +232,12 @@ fun CameraPreview(modifier: Modifier = Modifier) {
 
 @Composable
 fun DetectionOverlay(
-    detectedSigns: List<DetectedSign>,
+    activeSigns: List<ActiveSign>,
     onSignClick: (Int) -> Unit
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            detectedSigns.forEach { sign ->
+            activeSigns.forEach { sign ->
                 val left = sign.xMin * size.width
                 val top = sign.yMin * size.height
                 val width = (sign.xMax - sign.xMin) * size.width
@@ -187,8 +252,7 @@ fun DetectionOverlay(
             }
         }
 
-        // Interaction layer
-        detectedSigns.forEach { sign ->
+        activeSigns.forEach { sign ->
             val left = sign.xMin * maxWidth.value
             val top = sign.yMin * maxHeight.value
             val width = (sign.xMax - sign.xMin) * maxWidth.value
@@ -205,20 +269,20 @@ fun DetectionOverlay(
 }
 
 @Composable
-fun HistoryScreen(appViewModel: AppViewModel, onSignSelected: (Int) -> Unit) {
-    val historySigns by appViewModel.historySigns.collectAsState()
+fun HistoryScreen(cameraViewModel: CameraViewModel, onSignSelected: (Int) -> Unit) {
+    val historyState by cameraViewModel.historyState.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("История распознавания", style = MaterialTheme.typography.headlineSmall)
         Spacer(modifier = Modifier.height(16.dp))
         
-        if (historySigns.isEmpty()) {
+        if (historyState.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("История пока пуста", style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(historySigns) { sign ->
+                items(historyState) { sign ->
                     SignItem(sign = sign, onClick = { onSignSelected(sign.id) })
                 }
             }
@@ -230,7 +294,6 @@ fun HistoryScreen(appViewModel: AppViewModel, onSignSelected: (Int) -> Unit) {
 @Composable
 fun SignDetailScreen(signId: Int?, appViewModel: AppViewModel, onBack: () -> Unit) {
     val allSigns by appViewModel.allSigns.collectAsState()
-    val isVoiceAvailable by appViewModel.isVoiceAvailable.collectAsState()
     val sign = remember(signId, allSigns) {
         if (signId == null) null else allSigns.firstOrNull { it.id == signId }
     }
@@ -262,10 +325,9 @@ fun SignDetailScreen(signId: Int?, appViewModel: AppViewModel, onBack: () -> Uni
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = { appViewModel.speakText(sign.ttsTitle) },
-                    enabled = isVoiceAvailable,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (isVoiceAvailable) "Прослушать описание" else "Озвучка недоступна")
+                    Text("Прослушать описание")
                 }
             }
         }
@@ -275,29 +337,22 @@ fun SignDetailScreen(signId: Int?, appViewModel: AppViewModel, onBack: () -> Uni
 @Composable
 fun SettingsScreen(
     appSettingsState: AppSettings,
-    isVoiceAvailable: Boolean,
-    isCvAvailable: Boolean,
-    onToggleVoice: suspend (Boolean) -> Unit,
-    onSelectModel: suspend (YoloModelType) -> Unit,
-    onThresholdChange: suspend (Float) -> Unit
+    onToggleVoice: (Boolean) -> Unit,
+    onSelectModel: (String) -> Unit,
+    onThresholdChange: (Float) -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    var localThreshold by remember { mutableStateOf(appSettingsState.yoloConfidenceThreshold) }
+    var localThreshold by remember { mutableStateOf(appSettingsState.confidenceThreshold) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Настройки", style = MaterialTheme.typography.headlineSmall)
-        Spacer(modifier = Modifier.height(24.dp))
-
-        StatusCard(isCvAvailable, isVoiceAvailable)
         Spacer(modifier = Modifier.height(24.dp))
 
         Text("Голосовые уведомления", fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
             Text("Включить озвучку", modifier = Modifier.weight(1f))
             Switch(
-                checked = appSettingsState.isVoiceAlertsEnabled,
-                onCheckedChange = { scope.launch { onToggleVoice(it) } },
-                enabled = isVoiceAvailable
+                checked = appSettingsState.isTtsEnabled,
+                onCheckedChange = { onToggleVoice(it) }
             )
         }
 
@@ -306,57 +361,28 @@ fun SettingsScreen(
         Slider(
             value = localThreshold,
             onValueChange = { localThreshold = it },
-            onValueChangeFinished = { scope.launch { onThresholdChange(localThreshold) } },
+            onValueChangeFinished = { onThresholdChange(localThreshold) },
             valueRange = 0.1f..1.0f
         )
 
         Spacer(modifier = Modifier.height(24.dp))
         Text("Модель YOLO", fontWeight = FontWeight.Bold)
-        YoloModelType.values().forEach { model ->
+        val models = listOf("yolov8n.tflite", "yolov8s.tflite")
+        models.forEach { modelPath ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { scope.launch { onSelectModel(model) } }
+                    .clickable { onSelectModel(modelPath) }
                     .padding(vertical = 4.dp)
             ) {
                 RadioButton(
-                    selected = appSettingsState.selectedModel == model,
-                    onClick = { scope.launch { onSelectModel(model) } }
+                    selected = appSettingsState.activeModelPath == modelPath,
+                    onClick = { onSelectModel(modelPath) }
                 )
-                Text(model.uiName, modifier = Modifier.padding(start = 8.dp))
+                Text(modelPath, modifier = Modifier.padding(start = 8.dp))
             }
         }
-    }
-}
-
-@Composable
-fun StatusCard(isCvAvailable: Boolean, isVoiceAvailable: Boolean) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Статус системы", fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
-            StatusItem("Компьютерное зрение", isCvAvailable)
-            StatusItem("Синтез речи (TTS)", isVoiceAvailable)
-        }
-    }
-}
-
-@Composable
-fun StatusItem(label: String, isAvailable: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .background(if (isAvailable) Color.Green else Color.Red, RoundedCornerShape(5.dp))
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(label)
-        Spacer(modifier = Modifier.weight(1f))
-        Text(if (isAvailable) "Доступен" else "Не готов", fontSize = 12.sp)
     }
 }
 
