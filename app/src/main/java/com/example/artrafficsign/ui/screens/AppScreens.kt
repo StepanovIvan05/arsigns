@@ -1,14 +1,5 @@
 package com.example.artrafficsign.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.view.ViewGroup
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,14 +21,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -50,7 +38,9 @@ import com.example.domain.model.ActiveSign
 import com.example.domain.model.AppSettings
 import com.example.domain.model.SignEntity
 import com.example.domain.model.YoloModelType
-import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
+import coil.decode.SvgDecoder
+import coil.request.ImageRequest
 
 sealed class AppScreen(val route: String, val label: String, val icon: ImageVector) {
     object Home : AppScreen("home", "Главная", Icons.Default.Home)
@@ -138,97 +128,25 @@ fun AppNavigation(
 
 @Composable
 fun HomeScreen(cameraViewModel: CameraViewModel, onSignSelected: (Int) -> Unit) {
-    val context = LocalContext.current
     val uiState by cameraViewModel.uiState.collectAsState()
-    
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    DisposableEffect(cameraViewModel) {
+        cameraViewModel.startDetection()
+        onDispose { cameraViewModel.stopDetection() }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        DetectionOverlay(
+            activeSigns = uiState,
+            onSignClick = { signId ->
+                onSignSelected(signId)
+            }
         )
     }
-
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasCameraPermission = isGranted
-    }
-
-    // Автоматический запрос разрешения при входе, если его нет
-    LaunchedEffect(Unit) {
-        if (!hasCameraPermission) {
-            launcher.launch(Manifest.permission.CAMERA)
-        }
-    }
-
-    if (hasCameraPermission) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            CameraPreview(modifier = Modifier.fillMaxSize())
-
-            DetectionOverlay(
-                activeSigns = uiState,
-                onSignClick = { signId -> 
-                    cameraViewModel.onSignClicked(signId)
-                    onSignSelected(signId)
-                }
-            )
-        }
-    } else {
-        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Для работы приложения нужен доступ к камере. Пожалуйста, предоставьте разрешение.",
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
-                    Text("Разрешить камеру")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun CameraPreview(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-
-    AndroidView(
-        factory = { ctx ->
-            val previewView = PreviewView(ctx).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-            }
-
-            cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview
-                    )
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }, ContextCompat.getMainExecutor(context))
-
-            previewView
-        },
-        modifier = modifier
-    )
 }
 
 @Composable
@@ -263,7 +181,7 @@ fun DetectionOverlay(
                 modifier = Modifier
                     .offset(x = left.dp, y = top.dp)
                     .size(width = width.dp, height = height.dp)
-                    .clickable { onSignClick(sign.trackerId) }
+                    .clickable { onSignClick(sign.sign.id) }
             )
         }
     }
@@ -294,9 +212,13 @@ fun HistoryScreen(cameraViewModel: CameraViewModel, onSignSelected: (Int) -> Uni
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignDetailScreen(signId: Int?, appViewModel: AppViewModel, onBack: () -> Unit) {
-    val allSigns by appViewModel.allSigns.collectAsState()
-    val sign = remember(signId, allSigns) {
-        if (signId == null) null else allSigns.firstOrNull { it.id == signId }
+    val selectedSign by appViewModel.selectedSign.collectAsState()
+    val sign = if (selectedSign?.id == signId) selectedSign else null
+
+    LaunchedEffect(signId) {
+        if (signId != null) {
+            appViewModel.loadSign(signId)
+        }
     }
 
     Scaffold(
@@ -313,6 +235,15 @@ fun SignDetailScreen(signId: Int?, appViewModel: AppViewModel, onBack: () -> Uni
             if (sign == null) {
                 InfoMessage("Знак не найден.")
             } else {
+                AssetSvgImage(
+                    assetPath = sign.svgPath,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .background(Color.White, RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(sign.title, style = MaterialTheme.typography.headlineMedium)
                 Text("Код ПДД: ${sign.pddCode}", style = MaterialTheme.typography.bodyLarge)
                 Spacer(modifier = Modifier.height(16.dp))
@@ -322,13 +253,6 @@ fun SignDetailScreen(signId: Int?, appViewModel: AppViewModel, onBack: () -> Uni
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(sign.description)
                     }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(
-                    onClick = { appViewModel.speakText(sign.ttsTitle) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Прослушать описание")
                 }
             }
         }
@@ -404,18 +328,52 @@ fun InfoMessage(message: String) {
 }
 
 @Composable
+fun AssetSvgImage(assetPath: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val normalizedPath = remember(assetPath) {
+        assetPath
+            .trim()
+            .replace('\\', '/')
+            .removePrefix("/")
+            .replace("sources/ signs/", "sources/signs/")
+    }
+
+    if (normalizedPath.isBlank()) {
+        Box(modifier = modifier.background(Color.LightGray, RoundedCornerShape(4.dp)))
+        return
+    }
+
+    val imageRequest = remember(context, normalizedPath) {
+        ImageRequest.Builder(context)
+            .data("file:///android_asset/$normalizedPath")
+            .decoderFactory(SvgDecoder.Factory())
+            .crossfade(false)
+            .build()
+    }
+
+    AsyncImage(
+        model = imageRequest,
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = modifier,
+        alignment = Alignment.Center
+    )
+}
+
+@Composable
 fun SignItem(sign: SignEntity, onClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(40.dp).background(Color.LightGray, RoundedCornerShape(4.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(sign.pddCode, fontSize = 10.sp)
-            }
+            AssetSvgImage(
+                assetPath = sign.svgPath,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.White, RoundedCornerShape(4.dp))
+                    .padding(4.dp)
+            )
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(sign.title, fontWeight = FontWeight.Bold)

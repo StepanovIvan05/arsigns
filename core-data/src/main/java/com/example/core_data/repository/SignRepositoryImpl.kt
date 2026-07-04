@@ -30,8 +30,7 @@ class SignRepositoryImpl @Inject constructor(
 
         // 2. Фолбэк: если кэш пуст или знак новый, идем в БД один раз
         return withContext(Dispatchers.IO) {
-            // Приводим id к String, если этого требует твой Dao
-            signDao.getById(id.toString())?.toDomain()?.also { entity ->
+            signDao.getById(id)?.toDomain()?.also { entity ->
                 // На всякий случай сохраняем в кэш, чтобы не ходить в БД на следующем кадре
                 cachedSigns = cachedSigns + (id to entity)
             }

@@ -7,5 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 interface IDynamicListsManager {
     val activeSigns: StateFlow<List<ActiveSign>>
     val historySigns: StateFlow<List<SignEntity>>
+    fun recordRecognizedSign(sign: SignEntity)
     fun clearActiveSigns()
 }

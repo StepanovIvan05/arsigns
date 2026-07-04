@@ -76,12 +76,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.compose.material.icons.extended)
-
-    // CameraX (Нужно для PreviewView в UI)
-    implementation(libs.camera.view)
-    implementation(libs.camera.lifecycle)
-    implementation(libs.camera.camera2)
-    implementation(libs.camera.core)
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-svg:2.7.0")
 
     // Dagger Hilt (Главный контейнер DI для всего приложения)
     implementation(libs.hilt.android)

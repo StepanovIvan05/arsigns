@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 data class SignEntityDb(
     @PrimaryKey
     @ColumnInfo(name = "Original_Category_ID")
-    val originalCategoryId: String,
+    val originalCategoryId: Int,
 
     @ColumnInfo(name = "GOST_Sign_Number")
     val gostSignNumber: String,
