@@ -11,10 +11,10 @@ interface SignDao {
     suspend fun getAll(): List<SignEntityDb>
 
     @Query("SELECT * FROM signs WHERE Original_Category_ID = :id LIMIT 1")
-    suspend fun getById(id: String): SignEntityDb?
+    suspend fun getById(id: Int): SignEntityDb?
 
-    @Query("SELECT * FROM signs WHERE GOST_Sign_Number = :index LIMIT 1")
-    suspend fun getByYoloClassIndex(index: String): SignEntityDb?
+    @Query("SELECT * FROM signs WHERE GOST_Sign_Number = :gostSignNumber LIMIT 1")
+    suspend fun getByGostSignNumber(gostSignNumber: String): SignEntityDb?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(signs: List<SignEntityDb>)

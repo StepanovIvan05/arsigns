@@ -14,6 +14,7 @@ class TtsManagerImpl @Inject constructor(
 
     private var tts: TextToSpeech? = null
     private var isReady = false
+    private var utteranceId = 0
 
     init {
         tts = TextToSpeech(context, this)
@@ -25,7 +26,7 @@ class TtsManagerImpl @Inject constructor(
 
     override fun speak(text: String) {
         if (!isReady) return
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "arsigns")
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "arsigns-${utteranceId++}")
     }
 
     override fun stop() {

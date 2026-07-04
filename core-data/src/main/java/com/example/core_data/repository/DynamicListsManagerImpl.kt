@@ -24,6 +24,8 @@ class DynamicListsManagerImpl @Inject constructor(
     @param:ApplicationScope private val scope: CoroutineScope
 ) : IDynamicListsManager {
 
+    private val maxHistorySize = 50
+
     private val _activeSigns = MutableStateFlow<List<ActiveSign>>(emptyList())
     override val activeSigns: StateFlow<List<ActiveSign>> = _activeSigns.asStateFlow()
 
@@ -37,7 +39,11 @@ class DynamicListsManagerImpl @Inject constructor(
             signRepository.preloadCache()
 
             cvLayerApi.liveDetectedSigns
-                .onEach { detectedSigns -> _activeSigns.value = toActiveSigns(detectedSigns) }
+                .onEach { detectedSigns ->
+                    val activeSigns = toActiveSigns(detectedSigns)
+                    _activeSigns.value = activeSigns
+                    activeSigns.forEach { recordRecognizedSign(it.sign) }
+                }
                 .launchIn(scope)
         }
     }
@@ -63,6 +69,15 @@ class DynamicListsManagerImpl @Inject constructor(
             sign = signEntity
         )
     }
+
+    override fun recordRecognizedSign(sign: SignEntity) {
+        val current = _historySigns.value
+        if (current.firstOrNull()?.id == sign.id) return
+
+        _historySigns.value = (listOf(sign) + current.filterNot { it.id == sign.id })
+            .take(maxHistorySize)
+    }
+
     override fun clearActiveSigns() {
         _activeSigns.value = emptyList()
         // _historySigns не трогаем вообще

@@ -8,7 +8,6 @@ import com.example.domain.model.SignEntity
 import com.example.domain.repository.IDynamicListsManager
 import com.example.domain.repository.ISettingsRepository
 import com.example.domain.repository.ISignRepository
-import com.example.domain.repository.ITtsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,8 +21,7 @@ import javax.inject.Inject
 class AppViewModel @Inject constructor(
     private val signRepository: ISignRepository,
     private val dynamicListsManager: IDynamicListsManager,
-    private val settingsRepository: ISettingsRepository,
-    private val ttsManager: ITtsManager
+    private val settingsRepository: ISettingsRepository
 ) : ViewModel() {
 
     private val _allSigns = MutableStateFlow<List<SignEntity>>(emptyList())
@@ -55,7 +53,4 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    fun speakText(text: String) {
-        ttsManager.speak(text)
-    }
 }
