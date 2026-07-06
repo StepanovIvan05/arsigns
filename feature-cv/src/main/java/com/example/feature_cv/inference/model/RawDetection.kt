@@ -9,7 +9,7 @@ package com.example.feature_cv.inference.model
  * RawDetection — внутренний формат :feature-cv, между InferenceEngine и SignTracker.
  */
 data class RawDetection(
-    val yoloClassIndex: String,
+    val classId: Int,
     val confidence: Float,
     val xMin: Float,
     val yMin: Float,
