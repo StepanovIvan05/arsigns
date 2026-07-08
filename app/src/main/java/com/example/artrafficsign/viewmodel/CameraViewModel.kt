@@ -87,6 +87,10 @@ class CameraViewModel @Inject constructor(
         voiceLayerApi.stop()
     }
 
+    fun speakSignPriority(sign: SignEntity) {
+        voiceLayerApi.speakPriority(sign.ttsTitle)
+    }
+
     override fun onCleared() {
         cvLayerApi.stopDetection()
         super.onCleared()

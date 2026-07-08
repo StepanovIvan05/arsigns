@@ -77,6 +77,11 @@ private data class MappedActiveSign(
     val frame: OverlayRect
 )
 
+private data class DetectionIconOverlay(
+    val sign: SignEntity,
+    val rect: OverlayRect
+)
+
 private data class OverlayRect(
     val left: Float,
     val top: Float,
@@ -375,9 +380,8 @@ fun HomeScreen(cameraViewModel: CameraViewModel, onSignSelected: (Int) -> Unit) 
             DetectionOverlay(
                 activeSigns = uiState,
                 frameSize = frameSize,
-                onSignClick = { signId ->
-                    onSignSelected(signId)
-                }
+                onSignClick = { signId -> onSignSelected(signId) },
+                onSignLabelClick = { sign -> cameraViewModel.speakSignPriority(sign) }
             )
         } else {
             Box(
@@ -396,7 +400,8 @@ fun HomeScreen(cameraViewModel: CameraViewModel, onSignSelected: (Int) -> Unit) 
 fun DetectionOverlay(
     activeSigns: List<ActiveSign>,
     frameSize: FrameSize?,
-    onSignClick: (Int) -> Unit
+    onSignClick: (Int) -> Unit,
+    onSignLabelClick: (SignEntity) -> Unit
 ) {
     if (frameSize == null || frameSize.width == 0 || frameSize.height == 0) return
 
@@ -472,23 +477,38 @@ fun DetectionOverlay(
             )
         }
 
-        val occupiedOverlayRects = mutableListOf<OverlayRect>()
-        mappedSigns.forEachIndexed { index, mappedSign ->
-            val isSmallFrame = mappedSign.frame.width < smallFrameThresholdPx ||
-                mappedSign.frame.height < smallFrameThresholdPx
-            val iconRect = if (isSmallFrame) {
-                smallSignIconRect(
+        fun isSmallFrame(frame: OverlayRect): Boolean {
+            return frame.width < smallFrameThresholdPx || frame.height < smallFrameThresholdPx
+        }
+
+        val iconOverlays = mutableListOf<DetectionIconOverlay>()
+        mappedSigns
+            .filter { isSmallFrame(it.frame) }
+            .groupBy { it.activeSign.sign.id }
+            .values
+            .map { signs -> signs.maxBy { it.activeSign.confidence } }
+            .sortedBy { it.frame.centerX }
+            .forEach { mappedSign ->
+                val iconRect = smallSignIconRect(
                     frame = mappedSign.frame,
                     screenWidth = screenWidthPx,
                     screenHeight = screenHeightPx,
                     iconSize = smallIconSizePx,
                     gap = gapPx,
                     edgePadding = edgePaddingPx,
-                    occupiedRects = occupiedOverlayRects
+                    occupiedRects = iconOverlays.map { it.rect }
                 )
-            } else {
-                null
+
+                iconOverlays += DetectionIconOverlay(
+                    sign = mappedSign.activeSign.sign,
+                    rect = iconRect
+                )
             }
+
+        val occupiedOverlayRects = iconOverlays.map { it.rect }.toMutableList()
+        mappedSigns.forEachIndexed { index, mappedSign ->
+            val isSmallFrame = mappedSign.frame.width < smallFrameThresholdPx ||
+                mappedSign.frame.height < smallFrameThresholdPx
             val labelRect = chooseLabelRect(
                 frameIndex = index,
                 frames = frameRects,
@@ -498,12 +518,11 @@ fun DetectionOverlay(
                 labelHeight = labelHeightPx,
                 gap = gapPx,
                 edgePadding = edgePaddingPx,
-                occupiedRects = occupiedOverlayRects + listOfNotNull(iconRect),
+                occupiedRects = occupiedOverlayRects,
                 isSmallFrame = isSmallFrame
             )
 
             occupiedOverlayRects += labelRect
-            iconRect?.let { occupiedOverlayRects += it }
 
             DetectionSignLabel(
                 title = mappedSign.activeSign.sign.title,
@@ -515,23 +534,23 @@ fun DetectionOverlay(
                         )
                     }
                     .width(with(density) { labelRect.width.toDp() }),
-                onClick = { onSignClick(mappedSign.activeSign.sign.id) }
+                onClick = { onSignLabelClick(mappedSign.activeSign.sign) }
             )
+        }
 
-            if (iconRect != null) {
-                DetectionSignIcon(
-                    sign = mappedSign.activeSign.sign,
-                    modifier = Modifier
-                        .offset {
-                            IntOffset(
-                                iconRect.left.roundToInt(),
-                                iconRect.top.roundToInt()
-                            )
-                        }
-                        .size(with(density) { iconRect.width.toDp() }),
-                    onClick = { onSignClick(mappedSign.activeSign.sign.id) }
-                )
-            }
+        iconOverlays.forEach { iconOverlay ->
+            DetectionSignIcon(
+                sign = iconOverlay.sign,
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            iconOverlay.rect.left.roundToInt(),
+                            iconOverlay.rect.top.roundToInt()
+                        )
+                    }
+                    .size(with(density) { iconOverlay.rect.width.toDp() }),
+                onClick = { onSignClick(iconOverlay.sign.id) }
+            )
         }
     }
 }
