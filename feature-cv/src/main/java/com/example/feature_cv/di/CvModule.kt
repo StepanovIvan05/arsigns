@@ -3,6 +3,7 @@ package com.example.feature_cv.di
 import com.example.domain.api.CvLayerApi
 import com.example.feature_cv.CvLayerApiImpl
 import com.example.feature_cv.tracker.IouSignTracker
+import com.example.feature_cv.tracker.KalmanSignTracker
 import com.example.feature_cv.tracker.SignTracker
 import dagger.Binds
 import dagger.Module
@@ -32,6 +33,6 @@ abstract class CvModule {
          */
         @Provides
         @Singleton
-        fun provideSignTracker(): SignTracker = IouSignTracker()
+        fun provideSignTracker(): SignTracker = KalmanSignTracker()
     }
 }
