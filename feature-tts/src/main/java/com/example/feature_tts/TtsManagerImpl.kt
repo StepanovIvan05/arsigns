@@ -52,7 +52,7 @@ class TtsManagerImpl @Inject constructor(
 
     // Приоритетная озвучка по клику пользователя (сбивает текущую очередь)
     override fun speakPriority(ttsText: String) {
-        if (!isReady || !isVoiceAlertsEnabled) return
+        if (!isReady) return
         tts?.speak(ttsText, TextToSpeech.QUEUE_FLUSH, null, "arsigns-flush-${utteranceId++}")
     }
 
